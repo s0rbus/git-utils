@@ -1,0 +1,9 @@
+
+Some scripts etc which I have written and use to make my git life easier
+
+makegitbundle	- before I started using github (or if I don't want to)
+		  I use git bundle archives locally to backup, move git repos
+		  around. This script makes my life a bit easier
+
+git-summary	- prints a short summary about a git repo to stdout
+
