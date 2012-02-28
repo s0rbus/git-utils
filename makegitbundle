@@ -1,0 +1,86 @@
+#!/bin/bash
+
+if [ -z "$1" ];then
+   echo "usage: $0 <full patch to dir for self-extracting archive> [branch, default master | all]"
+   exit 1
+fi
+if [ ! -d "$1" ]; then
+   echo "$1 does not exist, terminating"
+   exit 1
+fi
+if [ ! -w "$1" ];then
+   echo "$1 is not writable, terminating"
+   exit 1
+fi
+if [ -z "$2" ]; then
+   echo "Default master branch will be used"
+   branch="master"
+else
+   echo "You have selected branch $2"
+   branch=$2
+fi
+
+#git flow branches sometimes have '/'. Replace with '_' here
+branchsafe=$(echo $branch | sed 's/\//_/g')
+
+#set up some paths and dirs
+PPWD=`pwd`
+ARCHD=$1
+TMPD=`mktemp -d /tmp/tmp.XXXX`
+DD=$(basename `pwd`)-$(date +%d%m%Y)
+mkdir $TMPD/$DD
+fn=$(basename `pwd`)-$branchsafe-gitbundle-$(date +%d%m%Y)
+
+#now create the git bundle and capture a git-summary
+#if a specific branch is selected, checkout that branch so that git-summary makes more sense
+#if all, then just use current checked out branch
+if [ $branch = "all" ]; then
+   git bundle create $TMPD/$DD/$fn --all
+   echo "git bundle list-heads $fn" > $TMPD/$DD/$fn-README
+   echo "git clone $fn -b <branch> <dir>" >> $TMPD/$DD/$fn-README
+   GITSUMM=`git-summary`
+else
+   git bundle create $TMPD/$DD/$fn $branch
+   echo "git clone $fn -b $branch <dir>" > $TMPD/$DD/$fn-README
+   #save current branch so can restore back to this after git-summary
+   cb=`git branch | sed -e '/^[^*]/d' | sed -e 's/\* \(.*\)/\1/'`
+   git checkout $branch
+   GITSUMM=`git-summary`
+   git checkout $cb
+fi
+
+#create a script which will be run after self-extraction
+cd $TMPD
+if [ $branch = "all" ]; then
+   script=`echo '#!/bin/sh';echo 'mkdir repo';echo "git bundle list-heads $fn";echo 'echo cloning HEAD';echo "git clone $fn repo"`
+else
+   script=`echo '#!/bin/sh';echo 'mkdir repo';echo "git clone $fn -b $branch repo"`
+fi
+
+bindir=$(dirname `which makegitbundle`)
+echo "$script" > $DD/sc1
+chmod +x $DD/sc1
+tar cfz /tmp/$fn.tgz $DD
+
+#maybe convoluted but it works (and I tried other ways!)
+#split header file then recombine with code to optionally print out git-summary output and exit
+#the git-summary text becomes a 'here document' which is just echoed to stdout if any arg is
+#given to self-extracting script
+PRE=`sed -n '/__OPTSUMM__/q;p' $bindir/mext-header`
+POST=`sed -n '/__OPTSUMM__/{:a;n;p;ba}' $bindir/mext-header`
+
+ins1="if [ \$1 ]; then\ncat <<EOM\n"
+ins2="EOM\nexit\nfi\n"
+ALL="$PRE\n$ins1$GITSUMM\n$ins2$POST"
+
+#the header file, now with git-summary text, is then processed to replace SCRIPT marker
+#with the script which is run after extraction. Then this is cat'd with the tar file and output
+#as a self-extracting shell script
+echo -e "$ALL" | sed -e "s/#__SCRIPT__/cd $DD\;\.\/sc1/" | cat - /tmp/$fn.tgz > $ARCHD/$fn.sh 
+
+#make self-extracting script executable and clean up
+chmod +x $ARCHD/$fn.sh
+rm /tmp/$fn.tgz
+
+cd $PPWD
+rm -rf $TMPD

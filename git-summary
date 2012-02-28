@@ -1,0 +1,78 @@
+#!/bin/sh
+
+GIT_FLOW=`which git-flow`
+if [ $? -gt 0 ]; then
+   #echo "git-flow not installed, will not use this in summary"
+   USE_GIT_FLOW=false
+else
+   USE_GIT_FLOW=true
+   GIT_FLOW_DIR=`dirname $GIT_FLOW`
+   # load common functionality
+   . "$GIT_FLOW_DIR/gitflow-common"
+fi
+cb=`git branch | sed -e '/^[^*]/d' | sed -e 's/\* \(.*\)/\1/'`
+ob=`git branch | sed -e '/^[*]/d'`
+nb=`git branch | wc -l | tr -d ' '`
+lc=`git log --relative-date -n 1 | grep Date | sed -e 's/^Date: *//'`
+gdesc=`git describe master 2>/dev/null`
+ret=$?
+if [ $ret -gt 0 ]; then
+  gdesc=`git describe master --always`
+  numtags=0
+else
+  numtags=`git tag | wc -l`
+fi
+cwd=`pwd`
+title="This is the git summary for project `basename $cwd`"
+len=${#title}
+let barnum=$len+1
+echo $title
+echo "on `date`"
+seq -s "-" $barnum | sed 's/[0-9]//g'
+if $USE_GIT_FLOW; then
+   if gitflow_is_initialized; then
+      GFTEST='is'
+   else
+      GFTEST='is not'
+   fi
+   echo "git flow $GFTEST being used in this project"
+fi
+if [ $nb -eq 1 ];then
+   echo "There is $nb branch which is $cb"
+elif [ $nb -gt 1 ];then
+   echo "There are $nb branches. The current branch is $cb"
+   echo -e "Other branches are:\n$ob"
+fi
+echo "The last commit was $lc"
+if [ $numtags -eq 0 ];then
+   echo "There are no tags"
+elif [ $numtags -eq 1 ];then
+   echo "There is $numtags tag which is `git tag`"
+elif [ $numtags -gt 1 ]; then
+   echo "There are $numtags tags:"
+   git tag | tr '\n' ',' | sed -e 's/,$/\n/'
+fi
+
+if $USE_GIT_FLOW && gitflow_is_initialized; then
+   git flow feature list 2>&1 | grep '^No .* exist'
+   gfftest=$?
+   if [ $gfftest -gt 0 ]; then
+      echo "Feature branches:"
+      git flow feature list -v
+   fi
+   git flow release list 2>&1 | grep '^No .* exist'
+   gfrtest=$?
+   if [ $gfrtest -gt 0 ]; then
+      echo "Release branches:"
+      git flow release list -v
+   fi
+   git flow hotfix list 2>&1 | grep '^No .* exist'
+   gfhtest=$?
+   if [ $gfhtest -gt 0 ]; then
+      echo "Hotfix branches:"
+      git flow hotfix list -v
+   fi
+fi
+
+
+
