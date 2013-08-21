@@ -12,3 +12,8 @@ mext-header	- Not a script in itself but a file used by the above.
 
 git-summary	- prints a short summary about a git repo to stdout
 
+remgit - Based on a script from Christopher Kalima (https://gist.github.com/ckalima), it creates
+	a remote (which can actually be local, just remote from current dir) git repository, inits
+	current dir as a git repo if it isn't already and sets remote as 'origin'.
+
+

@@ -13,7 +13,9 @@ fi
 cb=`git branch | sed -e '/^[^*]/d' | sed -e 's/\* \(.*\)/\1/'`
 ob=`git branch | sed -e '/^[*]/d'`
 nb=`git branch | wc -l | tr -d ' '`
-lc=`git log --relative-date -n 1 | grep Date | sed -e 's/^Date: *//'`
+rb=`git remote`
+lcd=`git log --relative-date -n 1 | grep '^Date:' | sed -e 's/^Date: *//'`
+lca=`git log --relative-date -n 1 | grep '^Author:' | sed -e 's/^Author: *//'`
 gdesc=`git describe master 2>/dev/null`
 ret=$?
 if [ $ret -gt 0 ]; then
@@ -36,14 +38,35 @@ if $USE_GIT_FLOW; then
       GFTEST='is not'
    fi
    echo "git flow $GFTEST being used in this project"
+   echo ""
 fi
 if [ $nb -eq 1 ];then
    echo "There is $nb branch which is $cb"
+   echo ""
 elif [ $nb -gt 1 ];then
    echo "There are $nb branches. The current branch is $cb"
    echo -e "Other branches are:\n$ob"
+   echo ""
 fi
-echo "The last commit was $lc"
+if [ "$rb" != "" ]; then
+   echo "A remote repository is defined"
+   git remote show $rb | head -3
+else
+   echo "No remote repositories have been defined"
+fi
+echo ""
+numstash=$(git stash list | wc -l)
+if [ $numstash -eq 1 ];then
+   echo "There is $numstash stash:"
+   git stash show
+   echo ""
+elif [ $numstash -gt 1 ];then
+   echo "There are $numstash stashes:"
+   git stash list
+   echo ""
+fi
+echo "The last commit was $lcd by $lca"
+echo ""
 if [ $numtags -eq 0 ];then
    echo "There are no tags"
 elif [ $numtags -eq 1 ];then
@@ -52,6 +75,7 @@ elif [ $numtags -gt 1 ]; then
    echo "There are $numtags tags:"
    git tag | tr '\n' ',' | sed -e 's/,$/\n/'
 fi
+echo ""
 
 if $USE_GIT_FLOW && gitflow_is_initialized; then
    git flow feature list 2>&1 | grep '^No .* exist'
