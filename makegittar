@@ -1,0 +1,82 @@
+#!/bin/bash
+
+if [ ! -d '.git' ]; then
+   echo 'Current directory is not a git repo, aborting'
+   exit 1;
+fi
+
+#if [[ $(git log -1 2>&1 /dev/null) ]]; then
+#   echo "Error: this repo has no revision HEAD"
+#	exit 1;
+#fi
+
+usage() {
+   echo 'usage:'
+   echo "$(basename $0) <-f> -W <-d dir>"
+	echo "-f : force archive with uncommitted changes"
+	echo "-W : force overwrite of output file"
+	echo "-d : set output dir (default is repo's parent dir)"
+}
+
+OUTPUT_DIR=".."
+FORCE=false
+OVERWRITE=false
+
+while getopts "fWd:" opt; do
+  case $opt in
+    f)
+      FORCE=true
+      ;;
+    W)
+      OVERWRITE=true
+      ;;
+    d)
+      OUTPUT_DIR=$OPTARG
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ $(git status --porcelain) ]]; then
+   if(! ${FORCE} ); then
+      echo "WARNING: this repo has uncommitted changes."
+      echo "Uncommitted changes WILL NOT BE ARCHIVED."
+      echo "To proceed use the -f option"
+	   exit 1;
+   fi
+fi
+
+PWD=$(basename $(pwd))
+BRANCH=$(git branch | sed -e '/^[^*]/d' | sed -e 's/\* \(.*\)/\1/')
+SHORT_HASH=$(git log -1 --format=%h)
+DT=$(date +%Y%m%d)
+
+FINALCHECK=$(git describe --all >& /dev/null)
+if [ $? -gt 0 ]; then
+   echo "repo error:"
+   git describe --all
+   exit 1
+fi
+
+FILE_PREFIX="${PWD}-${BRANCH}-${SHORT_HASH}-${DT}"
+OUTPUT_FILE="${FILE_PREFIX}.tgz"
+OUTPUT_PATH="${OUTPUT_DIR}/${OUTPUT_FILE}"
+
+if [ -f  ${OUTPUT_PATH} ]; then
+   if(! ${OVERWRITE} ); then
+      echo "Output file already exists. Use -W to overwrite."
+      exit 1;
+	fi
+fi
+
+git archive --format=tar.gz --prefix=${FILE_PREFIX}/ HEAD > ${OUTPUT_PATH}
+if [ $? -gt 0 ]; then
+   echo "Error occured creating git archive"
+else
+   echo "git archive successfully created at ${OUTPUT_PATH}"
+fi
+

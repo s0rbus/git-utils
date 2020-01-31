@@ -6,13 +6,15 @@
 DRYRUN=false
 SSH=false
 LOCAL=false
+BRANCH=''
+REMOTE=''
 
 # SSH Configuration
 # Replace USER, HOST, PORT, GIT_PATH with your details
 #Can be over-ridden using commandline options
 USER=''
 HOST=''
-PORT=''
+PORT='22'
 
 #Set the path to where to create remote bare git repos on 'remote'
 GIT_PATH=''
@@ -20,11 +22,15 @@ HOME_PATH=''
 
 usage() {
    echo 'usage:'
-   echo "$(basename $0) [-s | -l] <-d> <-h host> <-p port> <-u user>"
+   echo "$(basename $0) [-s | -l] <-d> <-h host> [-p port (defaults to 22)] <-u user>"
+   echo "To add a tracking remote to a branch: -b <branch> -r <remote name>"
 }
 
-while getopts ":dh:lp:su:" opt; do
+while getopts ":b:dh:lp:r:su:" opt; do
   case $opt in
+    b)
+      BRANCH=$OPTARG
+      ;;
     d)
       DRYRUN=true
       ;;
@@ -36,6 +42,9 @@ while getopts ":dh:lp:su:" opt; do
       ;;
     p)
       PORT=$OPTARG
+      ;;
+    r)
+      REMOTE=$OPTARG
       ;;
     s)
       SSH=true
@@ -62,28 +71,89 @@ if( (! $SSH ) && (! $LOCAL ) ); then
    exit 1
 fi
 
+#if using ssh, check host and user are also set
+if( $SSH ); then
+   if [ -z $HOST ] || [ -z $USER ]; then
+      echo "when using ssh, must also specify host and user, aborting"
+      exit 1
+   fi
+fi
+
 if( $DRYRUN ); then
    echo " ------------------ DRY RUN -------------------"
 fi
 
 if( $LOCAL ); then
    GIT_PATH="$HOME_PATH/$GIT_PATH"
+else
+   GIT_PATH="/$GIT_PATH"
 fi
 
 #Bash param/regex extraction
 #${var##Pattern} Remove from $var the longest part of $Pattern that matches the front end of $var.
 REPO=${PWD##*/}.git
 if( $SSH ); then
-   GIT_REMOTE_SERVER_PATH=$USER@$HOST:$PORT/~/$GIT_PATH/$REPO
+   GIT_REMOTE_SERVER_PATH=$USER@$HOST:$PORT$GIT_PATH/$REPO
    GIT_REMOTE_URL=ssh://$GIT_REMOTE_SERVER_PATH
 elif( $LOCAL ); then
    GIT_REMOTE_URL=$GIT_PATH/$REPO
    GIT_REMOTE_SERVER_PATH=$GIT_PATH/$REPO
 fi
 
-echo "-------------------------------------------"
-echo "------ Building New Git Repository --------"
-echo "-------------------------------------------"
+if [ ! -d '.git' ]; then
+   echo "-------------------------------------------"
+   echo "------ Building New Git Repository --------"
+   echo "-------------------------------------------"
+else
+   #process adding a tracking remote for a branch...
+   #first check we have both -b and -r set
+   if [ ! -z "$BRANCH" ]; then
+      if [ -z "$REMOTE" ]; then
+         echo "if using -b, must specify -r as well"
+         exit 1
+      fi
+   fi
+   if [ ! -z "$REMOTE" ]; then
+      if [ -z "$BRANCH" ]; then
+         echo "if using -r, must specify -b as well"
+         exit 1
+      fi
+   fi
+   if [ ! -z "$BRANCH" ]; then
+       if( ! $SSH ); then
+          echo "Adding tracking branch only implemented for SSH at the moment"
+          exit 1
+       fi
+      #check branch specified isnt master - dont want to do that
+      if [ "$BRANCH" == "master" ]; then
+         echo "Not allowing adding a tracking branch for master, aborting"
+         exit 1
+      fi
+      #check given branch actually exists in local repo
+      git show-ref --verify --quiet refs/heads/${BRANCH}
+      RET=$?
+      if( [ $RET -gt 0 ] ); then
+         echo "Branch $BRANCH does not exist, aborting"
+         exit 1
+      fi
+      #check remote name does not already exist
+      git remote | grep -q $REMOTE
+      if [ $? -eq 0 ]; then
+         echo "remote name $REMOTE already exists, aborting"
+         exit 1
+      fi
+      echo "Adding tracking for branch ${BRANCH} to remote ${REMOTE} ..."
+      if(! $DRYRUN); then
+         git remote add -t $BRANCH $REMOTE $GIT_REMOTE_URL
+         git push -u $REMOTE $BRANCH
+      fi
+      echo "--"
+      echo "-- Your branch $BRANCH is now tracked at:"
+      echo "-- $GIT_REMOTE_SERVER_PATH"
+      echo "--"
+      exit 0
+   fi
+fi
 
 # Setup remote repo
 
@@ -96,15 +166,29 @@ echo "--"
 #ssh $USER@$HOST 'mkdir '$GIT_PATH'/'$REPO' && cd '$GIT_PATH'/'$REPO' && git --bare init && git --bare update-server-info && cp hooks/post-update.sample hooks/post-update && chmod a+x hooks/post-update && touch git-daemon-export-ok'
 
 RET=1
+ERR=""
 if(! $DRYRUN); then
    if( $SSH); then
-      ssh -p $PORT $USER@$HOST "mkdir $GIT_PATH/$REPO && cd $GIT_PATH/$REPO && git --bare init"
-      RET=$?
+	#first test connection this will confirm keys setup and working
+	ssh -q -o "batchmode=yes" -p $PORT $USER@$HOST true
+      	RET=$?
+	if( [ $RET -eq 0 ] ); then
+      		ssh -p $PORT $USER@$HOST "mkdir $GIT_PATH/$REPO && cd $GIT_PATH/$REPO && git --bare init"
+      		RET=$?
+		if( [ $RET -ne 0 ] ); then
+			ERR="Check remote git paths"
+		fi
+	else
+		ERR="Check ssh keys"
+	fi
    elif( $LOCAL ); then
-      CURRDIR=`pwd`
-      mkdir $GIT_PATH/$REPO && cd $GIT_PATH/$REPO && git --bare init
-      RET=$?
-      cd $CURRDIR
+	CURRDIR=`pwd`
+	mkdir $GIT_PATH/$REPO && cd $GIT_PATH/$REPO && git --bare init
+	RET=$?
+	if( [ $RET -ne 0 ] ); then
+		ERR="Failed to create local git remote"
+	fi
+	cd $CURRDIR
    fi
 fi
 
@@ -144,6 +228,6 @@ if( [ $RET -eq 0 ] ); then
    echo "--"
 else
    echo "Failed to create remote git repository"
+	echo "Error is: $ERR"
 fi
-
 

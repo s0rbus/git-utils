@@ -16,4 +16,9 @@ remgit - Based on a script from Christopher Kalima (https://gist.github.com/ckal
 	a remote (which can actually be local, just remote from current dir) git repository, inits
 	current dir as a git repo if it isn't already and sets remote as 'origin'.
 
+makegittar - creates a tar archive of current git repo
+	checks for uncommited changes and then will only create archive if '-f' flag is used
+	by default creates tar file in parent dir to repo with name of format:
+	<repo-dir-name>-<branch>-<git-short-hash>-<yyyymmdd>.tgz
+
 
